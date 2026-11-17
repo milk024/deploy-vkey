@@ -1,0 +1,16 @@
+image:
+  repository: gpu.example.ac.kr/myorg/vkey-web
+  tag: 8e9a1ac6e07ed3ebd0047af14c296cfae42bc65a
+  pullPolicy: IfNotPresent
+  pullSecretName: vkey-registry-secret
+
+replicaCount: 1
+
+service:
+  port: 80
+
+gateway:
+  enabled: true
+  existingGatewayName: vkey-gateway
+  existingGatewaySectionName: https
+  hostname: "aikey.example.ac.kr"

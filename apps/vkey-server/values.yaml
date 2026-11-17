@@ -1,0 +1,40 @@
+image:
+  repository: gpu.example.ac.kr/myorg/vkey-server
+  tag: 481e169b7128fa40ab09af369751c5fb3c750ec8
+  pullPolicy: IfNotPresent
+  pullSecretName: vkey-registry-secret
+
+replicaCount: 1
+
+service:
+  port: 3000
+
+env:
+  DB_HOST: vkey-postgres
+  DB_PORT: "5432"
+  TZ: "Asia/Seoul"
+  NODE_ENV: "production"
+
+envFromSecrets:
+  - vkey-postgres-secret
+  - vkey-app-secret
+
+gateway:
+  enabled: true
+  existingGatewayName: vkey-gateway
+  existingGatewaySectionName: https
+  hostname: "aikey.example.ac.kr"
+
+logs:
+  enabled: true
+  pvcName: vkey-logs-pvc
+  mountPath: /app/logs
+# 진행 중인 이미지 생성 job이 끝날 시간 — 앱의 jobWorker SHUTDOWN_GRACE_MS(180초)보다 커야 한다.
+# 짧게 잡으면 배포 중 생성이 잘리고, 연결을 끊어도 공급자는 계속 생성·과금하므로(2026-08-23 실측)
+# 크래시 복구가 재시도할 때 같은 이미지를 두 번 결제하게 된다.
+# 진행 중인 생성이 없으면 파드는 즉시 종료되므로 평소 배포 속도에는 영향이 없다.
+terminationGracePeriodSeconds: 340
+
+# Secret vkey-app-secret(클러스터에서 직접 관리) 을 바꾼 뒤 이 값을 바꾸면 vkey-server Pod 가 재시작된다.
+# 아무 문자열이나 되며, 처음 값은 ArgoCD 이전 시점의 기존 해시 그대로 (재시작 없이 이전하기 위해).
+appSecretRevision: "12530dfb747f729a910857d5ff85642d463b3f72a2a9e0f431eaf5b6267e3583"

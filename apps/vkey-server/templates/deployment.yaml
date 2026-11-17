@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vkey-server
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: vkey-server
+  template:
+    metadata:
+      annotations:
+        # Secret vkey-app-secret 은 저장소에 두지 않고 클러스터에서 직접 관리한다.
+        # Secret 을 바꾼 뒤 values.yaml 의 appSecretRevision 을 바꾸면 Pod 가 새 환경변수로 다시 뜬다.
+        checksum/app-secret: {{ required "appSecretRevision is required" .Values.appSecretRevision | quote }}
+      labels:
+        app: vkey-server
+    spec:
+      # 이미지 생성 job이 끝날 시간을 준다. 기본값 30초로는 진행 중이던 생성이 잘리는데, 연결을
+      # 끊어도 공급자는 생성을 계속하고 과금한다(2026-08-23 실측: 3초 만에 끊은 요청도 사용량에
+      # 그대로 집계됨). 그 상태로 크래시 복구가 재시도하면 같은 이미지를 두 번 결제하게 된다.
+      # jobWorker의 SHUTDOWN_GRACE_MS(= IMAGE_GENERATION_TIMEOUT_MS 300초 + 20초)보다 크게
+      # 잡아야 의미가 있다 — 앱이 기다리는 도중에 k8s가 SIGKILL을 보내면 앱 쪽 설정이 무의미해진다.
+      # httpPolicy의 타임아웃을 바꾸면 이 값도 같이 올려야 한다.
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 340 }}
+      {{- if .Values.image.pullSecretName }}
+      imagePullSecrets:
+        - name: {{ .Values.image.pullSecretName }}
+      {{- end }}
+      containers:
+        - name: vkey-server
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.port }}
+          # 기동이 끝나기 전에는 트래픽을 받지 않는다. 리스너는 즉시 뜨는데 기동 작업(단가 조사,
+          # Admin API rate limit 동기화, pgListener/jobWorker)은 실측 약 2초가 더 걸리고, 그 사이엔
+          # 단가표와 rate limit 한도가 비어 있는 상태로 요청을 처리한다. replicaCount가 1이라
+          # 롤링 업데이트마다 이 창이 열린다.
+          #
+          # 기동 시 학교 5개 뷰를 적재하므로 2초 × 180회 = 6분까지 기다린다.
+          # 첫 동기화 전에는 트래픽을 받지 않으며 Helm의 배포 대기는 10분이다.
+          startupProbe:
+            httpGet:
+              path: /api/ready
+              port: {{ .Values.service.port }}
+            periodSeconds: 2
+            failureThreshold: 180
+          # 기동 후 계속 확인 — 실패하면 서비스 엔드포인트에서만 빠지고 재시작은 안 된다.
+          readinessProbe:
+            httpGet:
+              path: /api/ready
+              port: {{ .Values.service.port }}
+            periodSeconds: 10
+            failureThreshold: 3
+          # 프로세스가 살아있는지만 본다(/api/ready가 아니라 /api/health). 실패하면 pod를
+          # 재시작하므로 DB 같은 외부 의존성이 섞이면 순단 한 번에 재시작 루프에 빠진다.
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: {{ .Values.service.port }}
+            periodSeconds: 10
+            failureThreshold: 3
+          envFrom:
+            {{- range .Values.envFromSecrets }}
+            - secretRef:
+                name: {{ . }}
+            {{- end }}
+          env:
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: "{{ $value }}"
+            {{- end }}
+          {{- if .Values.logs.enabled }}
+          volumeMounts:
+            - name: logs
+              mountPath: {{ .Values.logs.mountPath }}
+          {{- end }}
+      {{- if .Values.logs.enabled }}
+      volumes:
+        - name: logs
+          persistentVolumeClaim:
+            claimName: {{ .Values.logs.pvcName }}
+      {{- end }}

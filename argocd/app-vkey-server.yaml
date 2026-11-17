@@ -1,0 +1,27 @@
+# Application vkey-server — finalizer 없음: Application 을 지워도 클러스터 리소스는 남는다(실수로 인한 삭제 방지)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vkey-server
+  namespace: argocd
+spec:
+  project: vkey
+  source:
+    repoURL: https://gpu.example.ac.kr/gitea/myorg/deploy-vkey.git
+    targetRevision: main
+    path: apps/vkey-server
+    helm:
+      releaseName: vkey-server
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vkey-system
+  syncPolicy:
+    # 자동 동기화: deploy-vkey main 변경을 반영. selfHeal = 클러스터 직접 수정은 되돌림,
+    # prune = 저장소에서 지운 리소스는 삭제 (ArgoCD 가 추적하는 리소스만 대상. postgres·pgadmin·Secret 등 별도 관리 리소스는 해당 없음)
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
