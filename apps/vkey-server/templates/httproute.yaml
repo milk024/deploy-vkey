@@ -20,6 +20,10 @@ spec:
         - path:
             type: PathPrefix
             value: /api
+      {{- with .Values.gateway.requestTimeout }}
+      timeouts:
+        request: {{ . }}
+      {{- end }}
       backendRefs:
         - name: vkey-server
           port: {{ .Values.service.port }}

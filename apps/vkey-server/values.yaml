@@ -24,6 +24,8 @@ gateway:
   existingGatewayName: vkey-gateway
   existingGatewaySectionName: https
   hostname: "aikey.example.ac.kr"
+  # Envoy 기본 요청 타임아웃은 15초 — 응답이 긴 /api 요청이 504로 끊기지 않도록 rag-server 와 같은 120초로 늘린다.
+  requestTimeout: 120s
 
 logs:
   enabled: true
